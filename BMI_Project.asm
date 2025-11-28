@@ -8,10 +8,13 @@
     msgN      db 13,10,"Status: Normal$"
     msgOW     db 13,10,"Status: Overweight$"
     msgOB     db 13,10,"Status: Obese$"
+    newline   db 13,10,'$'
 
     height dw ?
     weight dw ?
-    bmi    dw ?
+    bmi dw ?
+    numBuf db 6 dup(0)
+
 .code
 
 ;---------------------------------------
@@ -23,12 +26,11 @@ print_str ENDP
 
 ;---------------------------------------
 read_num PROC
-    ; يقرأ رقم (2 digits max)
-    xor cx,cx        ; cx = number
+    xor cx,cx
 read_loop:
     mov ah,01
     int 21h
-    cmp al,13        ; Enter?
+    cmp al,13
     je end_read
     sub al,'0'
     mov bl,al
@@ -48,51 +50,59 @@ start:
     mov ax,@data
     mov ds,ax
 
-    ; Get height
+    ; قراءة الطول
     mov dx,offset msgHeight
     call print_str
     call read_num
     mov height,ax
 
-    ; Get weight
+    ; قراءة الوزن
     mov dx,offset msgWeight
     call print_str
     call read_num
     mov weight,ax
 
-    ; BMI = (weight * 10000) / (height * height)
+    ; ===============================
+    ; حساب BMI
+    ; BMI = (weight * 10000) / (height*height)
+    ; ===============================
     mov ax,weight
     mov bx,10000
-    mul bx            ; dx:ax = weight*10000
+    mul bx        ; DX:AX = weight*10000
 
     mov bx,height
-    mul bx            ; dx:ax = weight*10000*height
+    mul bx        ; DX:AX = weight*10000 * height
 
+    ; نقسم على الطول
     mov bx,height
-    div bx            ; (weight*10000) / height
+    div bx        ; AX = weight*10000 / height
 
-    mov bx,height
-    div bx            ; /height second time → BMI
+    div bx        ; AX = BMI = weight*10000 / (height*height)
     mov bmi,ax
-    sub bmi,20  ; Adjust for rounding
+    sub bmi,20
 
-
-    ; Print BMI
+    ; ===============================
+    ; طباعة BMI
+    ; ===============================
     mov dx,offset msgBMI
     call print_str
-
-    ; Print number
     mov ax,bmi
     call print_decimal
+    mov dx,offset newline
+    call print_str
 
-    ; Classification
+    ; ===============================
+    ; تصنيف BMI
+    ; ===============================
     mov ax,bmi
-    cmp ax,185
-    jl underweight
-    cmp ax,249
-    jle normal
-    cmp ax,299
-    jle overweight
+    cmp ax,300      ; BMI >=30.00 ×100 → Obese
+    jge obese
+    cmp ax,250      ; BMI >=25.00 ×100 → Overweight
+    jge overweight
+    cmp ax,185      ; BMI >=18.50 ×100 → Normal
+    jge normal
+    cmp ax,0     ; BMI <18.50 ×100 → Underweight
+    jge underweight
     jmp obese
 
 underweight:
@@ -119,30 +129,45 @@ exit:
     int 21h
 
 ;---------------------------------------
-; print_decimal → يطبع رقم من AX
-;---------------------------------------
 print_decimal PROC
     push ax
     push bx
     push cx
     push dx
-    push di
     mov bx,10
     xor cx,cx
-next_digit:
+    lea si,numBuf
+    add si,6
+    dec si
+
+    cmp ax,0
+    jne pd_loop
+    mov dl,'0'
+    mov ah,2
+    int 21h
+    jmp pd_done
+
+pd_loop:
     xor dx,dx
     div bx
     push dx
     inc cx
     cmp ax,0
-    jne next_digit
-print_loop:
+    jne pd_loop
+
+    inc si
+    mov di,si
+    mov bx,cx
+
+pd_print:
     pop dx
     add dl,'0'
-    mov ah,02
+    mov ah,2
     int 21h
-    loop print_loop
-    pop di
+    dec bx
+    jnz pd_print
+
+pd_done:
     pop dx
     pop cx
     pop bx
@@ -151,5 +176,3 @@ print_loop:
 print_decimal ENDP
 
 end start
-
-
