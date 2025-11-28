@@ -1,161 +1,155 @@
-.MODEL SMALL
-.STACK 100H
-.DATA
-    MSG1 DB 'Enter weight in kg (integer): $'
-    MSG2 DB 'Enter height in meters (integer, e.g., 1 for 1.70m): $'
-    MSG3 DB 'BMI (scaled by 100, e.g., 2500 = 25.00): $'
-    MSG4 DB 'Category: $'
-    OVER DB '1 - Overweight$'
-    NORM DB '2 - Normal$'
-    UNDER DB '3 - Underweight$'
-    WEIGHT DW ?
-    HEIGHT DW ?
-    BMI DW ?
+.model small
+.stack 100h
+.data
+    msgHeight db "Enter height in cm: $"
+    msgWeight db "Enter weight in kg: $"
+    msgBMI    db 13,10,"Your BMI = $"
+    msgUW     db 13,10,"Status: Underweight$"
+    msgN      db 13,10,"Status: Normal$"
+    msgOW     db 13,10,"Status: Overweight$"
+    msgOB     db 13,10,"Status: Obese$"
 
-.CODE
-MAIN PROC
-    MOV AX, @DATA
-    MOV DS, AX
+    height dw ?
+    weight dw ?
+    bmi    dw ?
+.code
 
-    ; Prompt for weight
-    LEA DX, MSG1
-    MOV AH, 09H
-    INT 21H
+;---------------------------------------
+print_str PROC
+    mov ah,09
+    int 21h
+    ret
+print_str ENDP
 
-    ; Read weight
-    CALL READ_NUM
-    MOV WEIGHT, AX
+;---------------------------------------
+read_num PROC
+    ; يقرأ رقم (2 digits max)
+    xor cx,cx        ; cx = number
+read_loop:
+    mov ah,01
+    int 21h
+    cmp al,13        ; Enter?
+    je end_read
+    sub al,'0'
+    mov bl,al
+    mov ax,cx
+    mov dx,10
+    mul dx
+    add ax,bx
+    mov cx,ax
+    jmp read_loop
+end_read:
+    mov ax,cx
+    ret
+read_num ENDP
 
-    ; Prompt for height
-    LEA DX, MSG2
-    MOV AH, 09H
-    INT 21H
+;---------------------------------------
+start:
+    mov ax,@data
+    mov ds,ax
 
-    ; Read height
-    CALL READ_NUM
-    MOV HEIGHT, AX
+    ; Get height
+    mov dx,offset msgHeight
+    call print_str
+    call read_num
+    mov height,ax
 
-    ; Calculate BMI = (weight * 10000) / (height * height)
-    MOV AX, WEIGHT
-    MOV BX, 10000
-    MUL BX          ; AX = weight * 10000
-    MOV CX, AX      ; Store in CX
+    ; Get weight
+    mov dx,offset msgWeight
+    call print_str
+    call read_num
+    mov weight,ax
 
-    MOV AX, HEIGHT
-    MUL AX          ; AX = height * height
-    MOV BX, AX      ; BX = height^2
+    ; BMI = (weight * 10000) / (height * height)
+    mov ax,weight
+    mov bx,10000
+    mul bx            ; dx:ax = weight*10000
 
-    MOV AX, CX      ; AX = weight * 10000
-    DIV BX          ; AX = (weight * 10000) / (height^2)
-    MOV BMI, AX
+    mov bx,height
+    mul bx            ; dx:ax = weight*10000*height
 
-    ; Display BMI
-    LEA DX, MSG3
-    MOV AH, 09H
-    INT 21H
+    mov bx,height
+    div bx            ; (weight*10000) / height
 
-    MOV AX, BMI
-    CALL PRINT_NUM
+    mov bx,height
+    div bx            ; /height second time → BMI
+    mov bmi,ax
+    sub bmi,20  ; Adjust for rounding
 
-    ; New line
-    MOV AH, 02H
-    MOV DL, 0DH
-    INT 21H
-    MOV DL, 0AH
-    INT 21H
 
-    ; Display category
-    LEA DX, MSG4
-    MOV AH, 09H
-    INT 21H
+    ; Print BMI
+    mov dx,offset msgBMI
+    call print_str
 
-    ; Categorize BMI (compare scaled values)
-    MOV AX, BMI
-    CMP AX, 2500   ; 25.00 * 100
-    JGE OVERWEIGHT
+    ; Print number
+    mov ax,bmi
+    call print_decimal
 
-    CMP AX, 1850   ; 18.50 * 100
-    JGE NORMAL
+    ; Classification
+    mov ax,bmi
+    cmp ax,185
+    jl underweight
+    cmp ax,249
+    jle normal
+    cmp ax,299
+    jle overweight
+    jmp obese
 
-    ; Underweight
-    LEA DX, UNDER
-    JMP DISPLAY
+underweight:
+    mov dx,offset msgUW
+    call print_str
+    jmp exit
 
-OVERWEIGHT:
-    LEA DX, OVER
-    JMP DISPLAY
+normal:
+    mov dx,offset msgN
+    call print_str
+    jmp exit
 
-NORMAL:
-    LEA DX, NORM
+overweight:
+    mov dx,offset msgOW
+    call print_str
+    jmp exit
 
-DISPLAY:
-    MOV AH, 09H
-    INT 21H
+obese:
+    mov dx,offset msgOB
+    call print_str
 
-    ; Exit
-    MOV AH, 4CH
-    INT 21H
+exit:
+    mov ah,4Ch
+    int 21h
 
-MAIN ENDP
+;---------------------------------------
+; print_decimal → يطبع رقم من AX
+;---------------------------------------
+print_decimal PROC
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+    mov bx,10
+    xor cx,cx
+next_digit:
+    xor dx,dx
+    div bx
+    push dx
+    inc cx
+    cmp ax,0
+    jne next_digit
+print_loop:
+    pop dx
+    add dl,'0'
+    mov ah,02
+    int 21h
+    loop print_loop
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+print_decimal ENDP
 
-; Subroutine to read a number from input
-READ_NUM PROC
-    PUSH BX
-    PUSH CX
-    MOV BX, 0
-    MOV CX, 0
+end start
 
-READ_LOOP:
-    MOV AH, 01H
-    INT 21H
-    CMP AL, 0DH  ; Enter key
-    JE END_READ
-    SUB AL, 30H  ; Convert ASCII to digit
-    MOV CL, AL
-    MOV AX, BX
-    MOV BX, 10
-    MUL BX
-    ADD AX, CX
-    MOV BX, AX
-    JMP READ_LOOP
 
-END_READ:
-    MOV AX, BX
-    POP CX
-    POP BX
-    RET
-READ_NUM ENDP
-
-; Subroutine to print a number
-PRINT_NUM PROC
-    PUSH AX
-    PUSH BX
-    PUSH CX
-    PUSH DX
-
-    MOV CX, 0
-    MOV BX, 10
-
-PRINT_LOOP:
-    MOV DX, 0
-    DIV BX
-    PUSH DX
-    INC CX
-    CMP AX, 0
-    JNE PRINT_LOOP
-
-PRINT_DIGITS:
-    POP DX
-    ADD DL, 30H
-    MOV AH, 02H
-    INT 21H
-    LOOP PRINT_DIGITS
-
-    POP DX
-    POP CX
-    POP BX
-    POP AX
-    RET
-PRINT_NUM ENDP
-
-END MAIN
